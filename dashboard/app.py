@@ -116,65 +116,6 @@ def load_table_rowcounts() -> dict[str, int]:
     return get_table_rowcounts()
 
 
-# ---- Sidebar: navigation + global state ---------------------------------
-st.sidebar.title("🎮 Game BI")
-st.sidebar.caption("Crawler data inspector")
-
-# Refresh button — clear cache
-if st.sidebar.button("🔄 Refresh data", help="Clear cache, đọc lại từ DB"):
-    st.cache_data.clear()
-    st.rerun()
-
-# Show DB path
-from config import SQLITE_PATH
-st.sidebar.divider()
-st.sidebar.write("**DB:**")
-st.sidebar.code(str(SQLITE_PATH.relative_to(PROJECT_ROOT)))
-
-# Row counts
-counts = load_table_rowcounts()
-st.sidebar.write("**Rows per table:**")
-for t, n in counts.items():
-    st.sidebar.write(f"`{t}`: **{n:,}**")
-
-# ---- CSV Downloads (Power BI / Excel) ----
-st.sidebar.divider()
-st.sidebar.write("**📥 CSV Downloads (Power BI):**")
-try:
-    import socket
-    # Get LAN IP
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("8.8.8.8", 80))
-    lan_ip = s.getsockname()[0]
-    s.close()
-except Exception:
-    lan_ip = "localhost"
-
-api_base = f"http://{lan_ip}:8000"
-st.sidebar.markdown(f"API: [`{api_base}/downloads`]({api_base}/downloads)")
-csv_files = ["gacha_flat", "steam_flat", "steam_hourly_flat", "itunes_flat",
-             "news_flat", "dim_date", "ua_flat", "kpis_flat", "retention_flat"]
-for f in csv_files:
-    st.sidebar.markdown(f"&nbsp;&nbsp;[`{f}.csv`]({api_base}/downloads/{f}.csv)")
-st.sidebar.caption("CSV: tải file tĩnh. Cần re-export để update.")
-
-# Live API endpoints (Power BI Web connector — real-time from DB)
-st.sidebar.write("**🔌 Live API (Power BI Web connector):**")
-api_endpoints = [
-    ("Gacha revenue (LIVE)", "/api/gacha/revenue?format=csv"),
-    ("Steam hourly CCU (LIVE)", "/api/tables/fact_steam_hourly_ccu?format=csv"),
-    ("iTunes rankings (LIVE)", "/api/tables/fact_itunes_rankings?format=csv"),
-    ("News 48h (LIVE)", "/api/news?hours=48&format=csv"),
-    ("UA campaigns (LIVE)", "/api/tables/sample_ua_campaigns?format=csv"),
-    ("KPIs DAU/Retention (LIVE)", "/api/tables/sample_daily_kpis?format=csv"),
-    ("Retention Cookie Cats (LIVE)", "/api/tables/sample_cookie_cats?format=csv"),
-    ("Health check", "/api/health"),
-    ("Swagger docs", "/docs"),
-]
-for label, path in api_endpoints:
-    st.sidebar.markdown(f"&nbsp;&nbsp;[`{label}`]({api_base}{path})")
-st.sidebar.caption("Live API: data realtime từ DB. Power BI → Get Data → Web → URL + header `X-API-Key`.")
-
 # ---- Page routing via URL query param (giữ trang khi reload, dùng ?page=news) -----
 PAGES = [
     "📊 Portfolio Overview",
@@ -211,8 +152,73 @@ qp = st.query_params
 slug = qp.get("page", "overview")
 page = SLUG_TO_PAGE.get(slug, PAGES[0])
 
-# Menu sidebar — dùng BUTTON (click trong cùng Streamlit session, KHÔNG mở tab mới)
-# Button click → cập nhật query_params → reload giữ trang
+
+def render_sidebar_data_links() -> None:
+    """Render khối DB info + CSV Downloads + Live API endpoints ở cuối sidebar.
+
+    Tách ra function để giữ menu "Trang" ở trên cùng — khối này gọi sau menu.
+    """
+    # Show DB path
+    from config import SQLITE_PATH
+    st.sidebar.write("**DB:**")
+    st.sidebar.code(str(SQLITE_PATH.relative_to(PROJECT_ROOT)))
+
+    # Row counts
+    counts = load_table_rowcounts()
+    st.sidebar.write("**Rows per table:**")
+    for t, n in counts.items():
+        st.sidebar.write(f"`{t}`: **{n:,}**")
+
+    # ---- CSV Downloads (Power BI / Excel) ----
+    st.sidebar.divider()
+    st.sidebar.write("**📥 CSV Downloads (Power BI):**")
+    try:
+        import socket
+        # Get LAN IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        lan_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        lan_ip = "localhost"
+
+    api_base = f"http://{lan_ip}:8000"
+    st.sidebar.markdown(f"API: [`{api_base}/downloads`]({api_base}/downloads)")
+    csv_files = ["gacha_flat", "steam_flat", "steam_hourly_flat", "itunes_flat",
+                 "news_flat", "dim_date", "ua_flat", "kpis_flat", "retention_flat"]
+    for f in csv_files:
+        st.sidebar.markdown(f"&nbsp;&nbsp;[`{f}.csv`]({api_base}/downloads/{f}.csv)")
+    st.sidebar.caption("CSV: tải file tĩnh. Cần re-export để update.")
+
+    # Live API endpoints (Power BI Web connector — real-time from DB)
+    st.sidebar.write("**🔌 Live API (Power BI Web connector):**")
+    api_endpoints = [
+        ("Gacha revenue (LIVE)", "/api/gacha/revenue?format=csv"),
+        ("Steam hourly CCU (LIVE)", "/api/tables/fact_steam_hourly_ccu?format=csv"),
+        ("iTunes rankings (LIVE)", "/api/tables/fact_itunes_rankings?format=csv"),
+        ("News 48h (LIVE)", "/api/news?hours=48&format=csv"),
+        ("UA campaigns (LIVE)", "/api/tables/sample_ua_campaigns?format=csv"),
+        ("KPIs DAU/Retention (LIVE)", "/api/tables/sample_daily_kpis?format=csv"),
+        ("Retention Cookie Cats (LIVE)", "/api/tables/sample_cookie_cats?format=csv"),
+        ("Health check", "/api/health"),
+        ("Swagger docs", "/docs"),
+    ]
+    for label, path in api_endpoints:
+        st.sidebar.markdown(f"&nbsp;&nbsp;[`{label}`]({api_base}{path})")
+    st.sidebar.caption("Live API: data realtime từ DB. Power BI → Get Data → Web → URL + header `X-API-Key`.")
+
+
+# ---- Sidebar: navigation + global state ---------------------------------
+# THỨ TỰ: Title → Menu trang (trên cùng) → DB/CSV/API (dưới)
+st.sidebar.title("🎮 Game BI")
+st.sidebar.caption("Crawler data inspector")
+
+# Refresh button — clear cache
+if st.sidebar.button("🔄 Refresh data", help="Clear cache, đọc lại từ DB"):
+    st.cache_data.clear()
+    st.rerun()
+
+# Menu trang — đặt NGAY SAU title/refresh để dễ tiếp cận nhất
 st.sidebar.markdown("#### 📑 Trang")
 for p, slug_i in zip(PAGES, PAGE_SLUGS):
     is_current = (p == page)
@@ -222,8 +228,12 @@ for p, slug_i in zip(PAGES, PAGE_SLUGS):
         if not is_current:
             st.query_params["page"] = slug_i
             st.rerun()
-st.sidebar.divider()
 st.sidebar.caption("💡 URL `?page=...` giữ trang khi reload/F5.")
+
+# Khối DB info + CSV + Live API — đẩy xuống dưới menu trang
+st.sidebar.divider()
+render_sidebar_data_links()
+st.sidebar.divider()
 st.sidebar.caption("Power BI dashboard build riêng — đây chỉ là inspector.")
 
 

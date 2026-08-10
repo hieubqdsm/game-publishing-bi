@@ -12,7 +12,7 @@ Usage:
 Schedule mặc định:
     Mỗi giờ :00  → Steam crawl (top 100 CCU)
     Mỗi giờ :30  → iTunes crawl (US + VN games)
-    06:00 hàng ngày → News crawl (RSS gaming + AI + Hacker News)
+    Mỗi 4h (:00) → News crawl (RSS gaming + AI + Hacker News)
 
 Logs: logs/pipeline-scheduler.log
 """
@@ -82,8 +82,8 @@ def _should_run_itunes(now: datetime) -> bool:
 
 
 def _should_run_news(now: datetime) -> bool:
-    """06:00 hàng ngày."""
-    return now.hour == 6 and now.minute == 0
+    """Mỗi 4h: 00:00, 04:00, 08:00, 12:00, 16:00, 20:00."""
+    return now.hour % 4 == 0 and now.minute == 0
 
 
 @click.command()
@@ -99,7 +99,7 @@ def main(once: bool, dry_run: bool):
     logger.info("Schedule:")
     logger.info("  ⏰ Mỗi giờ :00 → Steam crawl (top 100 CCU)")
     logger.info("  ⏰ Mỗi giờ :30 → iTunes crawl (US + VN games)")
-    logger.info("  ⏰ 06:00 daily → News crawl (RSS + AI + Hacker News)")
+    logger.info("  ⏰ Mỗi 4h (:00) → News crawl (RSS + AI + Hacker News)")
     logger.info("")
 
     if dry_run:
@@ -131,13 +131,14 @@ def main(once: bool, dry_run: bool):
                     "scripts/run_daily.py", "--source", "itunes",
                 ])
 
-        # News (daily 6am)
+        # News (mỗi 4h)
         if _should_run_news(now) and last_run.get("news") != slot:
             last_run["news"] = slot
             if not dry_run:
                 _run("News crawl", [
                     PYTHON_BIN,
                     "scripts/run_news.py",
+                    "--hours", "6",  # crawl 6h gần nhất (chống miss tin giữa 2 lần chạy)
                 ])
 
         if once:
