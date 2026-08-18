@@ -94,8 +94,10 @@ AI_RSS_FEEDS: list[dict[str, str]] = [
         "tos": "https://techcrunch.com/terms-of-service/",
     },
     {
-        "name": "VentureBeat AI",
-        "url": "https://venturebeat.com/category/ai/feed/",
+        # Category feed (/category/ai/) stale từ 5/2026 — main feed còn update
+        # hàng ngày (verify 2026-08-18). Main feed cover cả tin AI của VB.
+        "name": "VentureBeat",
+        "url": "https://venturebeat.com/feed/",
         "tos": "https://venturebeat.com/terms-of-service/",
     },
     {
@@ -334,21 +336,44 @@ class NewsCrawler(BaseCrawler):
             logger.warning(f"[news] RSS parse {name} failed: {e}")
             return 0
 
-        # RSS 2.0: <item> ; Atom: <entry>
-        items = root.findall(".//item") or root.findall(".//entry")
+        # RSS 2.0: <item> ; Atom: <entry> (cần namespace-aware lookup —
+        # Atom feed khai báo xmlns mặc định nên findall(".//entry") không match)
+        ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+        items = root.findall(".//item")
+        if not items:
+            # Thử cả entry không namespace và entry trong Atom namespace
+            items = root.findall(".//entry") or root.findall(".//atom:entry", ATOM_NS)
         for item in items:
-            title = (item.findtext("title") or "").strip()
-            link = (item.findtext("link") or "").strip()
-            # Atom: link có href attribute
+            in_atom = item.tag.startswith("{http://www.w3.org/2005/Atom}")
+
+            def _text(tags: list[str]) -> str:
+                """Lấy text từ tag đầu tiên có giá trị (hỗ trợ cả Atom ns)."""
+                for t in tags:
+                    if in_atom:
+                        v = item.findtext(f"atom:{t}", namespaces=ATOM_NS)
+                        if v and v.strip():
+                            return v.strip()
+                    v = item.findtext(t)
+                    if v and v.strip():
+                        return v.strip()
+                return ""
+
+            title = _text(["title"])
+            # Decode HTML entities (&#8217; → ', &amp; → &) trong title
+            if title:
+                import html as html_mod
+                title = html_mod.unescape(title)
+            link = _text(["link"])
+            # Atom: link là element có href attribute (text thường rỗng)
             if not link:
-                link_el = item.find("link")
+                link_el = item.find("atom:link", ATOM_NS) if in_atom else item.find("link")
                 if link_el is not None:
                     link = link_el.get("href", "")
-            summary = (item.findtext("description") or item.findtext("summary") or "").strip()
+            summary = _text(["description", "summary"])
             # Strip HTML tags đơn giản
             summary = re.sub(r"<[^>]+>", " ", summary)[:500]
-            pub_date = (item.findtext("pubDate") or item.findtext("published") or "").strip()
-            author = (item.findtext("author") or item.findtext("dc:creator") or "").strip()
+            pub_date = _text(["pubDate", "published", "updated"])
+            author = _text(["author", "dc:creator"])
 
             if not title or not link:
                 continue
