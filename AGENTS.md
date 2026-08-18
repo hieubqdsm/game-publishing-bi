@@ -61,6 +61,7 @@ Nếu `.env` chưa có key thật, **hỏi user** để họ tự đăng ký:
 | `TWITCH_CLIENT_SECRET` | (cùng chỗ Twitch) | Copy Client Secret |
 | `TWITCH_CLIENT_SECRET` | (cùng chỗ Twitch) | Copy Client Secret |
 | iTunes | KHÔNG cần key | Free public API |
+| ActivePlayer.io | KHÔNG cần key | Free public HTML pages (estimated MAU/DAU/CCU mobile) |
 
 **Quy tắc:** Agent KHÔNG tự đăng ký giúp (cần account cá nhân của user).
 Agent chỉ hướng dẫn + verify sau khi user điền key.
@@ -107,6 +108,18 @@ Parser tự extract: rank, game name, scope (combined/global/cn), prev + current
 Idempotent — re-parse không duplicate. Fallback CSV: `scripts/manual/load_gacha_revenue.py`.
 Data gốc: Sensor Tower mobile estimates (PC/console excluded).
 
+### Mobile player counts (ActivePlayer.io — estimated MAU/DAU/CCU)
+```bash
+python scripts/run_activeplayer.py              # Fetch hết ~123 game mobile (~15 phút)
+python scripts/run_activeplayer.py --max 5      # Smoke test 5 game
+python scripts/run_activeplayer.py --slugs pubg-mobile,roblox   # Game cụ thể
+python scripts/run_activeplayer.py --no-fetch   # Re-parse HTML có sẵn trong data/raw/
+python scripts/run_activeplayer.py --dry-run    # Check config, không fetch
+```
+Data: ESTIMATED MAU/DAU/CCU per platform (Android/iOS), 12 tháng history rolling.
+ToS: Tier 1 ✅ (robots allow, ToS không cấm, không login — xem `docs/tos_compliance.md`).
+Rate limit polite: 6s + jitter 0-3s giữa requests. Cadence: hàng tháng.
+
 ### Daily tasks (sáng dậy chạy 1 lệnh)
 ```bash
 # 1. Generate daily briefing markdown
@@ -152,15 +165,19 @@ streamlit run dashboard/app.py
 Dashboard này KHÔNG phải Power BI — chỉ để inspect/verify data sau khi crawl.
 Power BI dashboard user sẽ tự build (xem `powerbi/data_sources.md`).
 
-7 trang:
+12 trang:
 - 📊 Portfolio Overview — KPIs + crawl activity
 - 📰 Daily News — morning briefing with filters
 - 🏆 Rankings & Trends — iTunes rankings + trajectory
+- 🎮 Steam CCU — daily concurrent players
 - 🎭 Genre & Publisher — market share analysis
 - 📈 Genre Trends — emerging genres + momentum
 - 🔍 Game Detail — deep dive 1 game + raw payload
 - 💼 Deal Evaluation — scorecard + ROAS calculator
-- 💰 Gacha Revenue — top 50 monthly revenue tracker (OCR from r/gachagaming)
+- 💰 Gacha Revenue — top 50 monthly revenue tracker (HTML parser)
+- 📢 UA Performance — CPI/CTR/CVR/ROAS (simulated)
+- 📊 Retention & DAU — D1/D7/D30 + ARPU benchmarks
+- 📱 Mobile Players — ActivePlayer.io estimated MAU/DAU/CCU (Android vs iOS)
 
 ### Init database
 ```bash
@@ -207,11 +224,13 @@ with get_connection() as conn:
 | `scripts/serve_pipeline.py` | Scheduler tự crawl theo giờ (Steam + iTunes + News) |
 | `scripts/export_csv.py` | Export SQLite → CSV (Power BI / Excel / cloud sync) |
 | `scripts/enrich_genres.py` | Enrich sub-genre cho iTunes/Steam games (lookup API, one-time) |
+| `scripts/run_activeplayer.py` | CLI entry point — fetch ActivePlayer.io mobile MAU/DAU/CCU |
 | `scripts/manual/parse_gacha_html.py` | Parse HTML gacha revenue table → SQLite (monthly) |
 | `scripts/manual/load_gacha_revenue.py` | Fallback CSV loader cho gacha revenue |
 | `scripts/manual/` | Slot cho Sensor Tower data save-tay (xem README) |
+| `src/crawlers/activeplayer_crawler.py` | ActivePlayer.io crawler — estimated mobile MAU/DAU/CCU by platform |
 | `src/api/server.py` | FastAPI app — REST endpoints cho Power BI |
-| `dashboard/app.py` | Streamlit inspector — xem data đã crawl (4 pages) |
+| `dashboard/app.py` | Streamlit inspector — xem data đã crawl (12 pages) |
 | `powerbi/data_sources.md` | Hướng dẫn connect Power BI |
 
 ---
@@ -220,7 +239,7 @@ with get_connection() as conn:
 
 ### 1. ToS Compliance — KHÔNG bao giờ craw trang login-gated
 - ❌ **KHÔNG** scrap Sensor Tower, data.ai, AppMagic, SteamDB
-- ✅ Chỉ dùng: Steam Web API, iTunes Search, IGDB, Meta/TikTok Ad Library API
+- ✅ Chỉ dùng: Steam Web API, iTunes Search, IGDB, ActivePlayer.io (rate-limited), Meta/TikTok Ad Library API
 - Xem chi tiết: `docs/tos_compliance.md`
 
 > Nếu user yêu cầu craw Sensor Tower, agent phải GIẢI THÍCH rủi ro ToS/ethics
@@ -254,9 +273,11 @@ with get_connection() as conn:
 - [x] Pipeline scheduler (`serve_pipeline.py` — tự crawl theo giờ)
 - [x] FastAPI server (serve data cho Power BI qua LAN/cloudflare)
 - [x] CSV export (9 flat views + downloads endpoint)
-- [x] Dashboard Streamlit (11 trang)
+- [x] Dashboard Streamlit (12 trang)
 - [x] Deal Evaluation (8 VN-validated criteria + scorecard)
 - [x] External datasets (Cookie Cats retention + simulated UA/KPIs)
+- [x] ActivePlayer.io crawler (estimated mobile MAU/DAU/CCU, ~123 game × 12 tháng)
+- [x] Mobile Players dashboard tab (Android vs iOS trend, top-50 leaderboard, MoM momentum)
 - [x] Docs: JD mapping, daily schedule, methodology, ToS
 
 ### ⏭️ Roadmap
@@ -291,9 +312,10 @@ Khi user yêu cầu, agent thực hiện ĐÚNG workflow sau (không tự ý đi
 1. Query gacha revenue trajectory (nếu có trong DB)
 2. Check Steam CCU + reviews (nếu có)
 3. Check iTunes VN rankings (nếu có)
-4. Apply 8 VN-validated criteria (xem Deal Evaluation dashboard)
-5. Output: scorecard + PURSUE/WATCH/PASS + recommendation
-6. KHÔNG search web trừ khi game chưa có trong DB
+4. Check ActivePlayer.io MAU mobile (Android/iOS split, 12 tháng trend)
+5. Apply 8 VN-validated criteria (xem Deal Evaluation dashboard)
+6. Output: scorecard + PURSUE/WATCH/PASS + recommendation
+7. KHÔNG search web trừ khi game chưa có trong DB
 
 ### "thống kê" / "phân tích"
 1. Query DB trực tiếp (KHÔNG search web trước)
@@ -327,6 +349,8 @@ Khi bạn mở Mac lên, có thể nói các kiểu:
 | "chạy scheduler" / "auto crawl" | `python scripts/serve_pipeline.py` (tự crawl Steam/iTunes/News theo giờ) |
 | "lấy tin AI" | `python scripts/run_news.py --source ai` |
 | "thêm gacha revenue" / "load gacha" | Mở revenue report → copy HTML table → save file → `python scripts/manual/parse_gacha_html.py <file.html>` |
+| "lấy mobile MAU" / "activeplayer" / "MAU mobile" | `python scripts/run_activeplayer.py` (fetch 123 game ~15 phút, hàng tháng) |
+| "xu hướng mobile" / "top mobile" | Mở dashboard trang 📱 Mobile Players, hoặc query `fact_engagement_metrics WHERE source='activeplayer'` |
 | "serve API" / "Power BI" | `python scripts/serve_api.py` (Power BI kéo data qua Web connector) |
 | "export CSV" | `python scripts/export_csv.py --flat` (cho Excel / LAN share) |
 | "check data" | `python scripts/data_quality.py` hoặc query DB trực tiếp |
