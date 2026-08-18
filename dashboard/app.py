@@ -129,6 +129,7 @@ PAGES = [
     "💰 Gacha Revenue",
     "📢 UA Performance",
     "📊 Retention & DAU",
+    "📱 Mobile Players",
 ]
 # Slug cho URL (vd: ?page=news) — ngắn gọn, dễ nhớ
 PAGE_SLUGS = [
@@ -143,6 +144,7 @@ PAGE_SLUGS = [
     "gacha-revenue",
     "ua-performance",
     "retention-dau",
+    "mobile-players",
 ]
 SLUG_TO_PAGE = dict(zip(PAGE_SLUGS, PAGES))
 PAGE_TO_SLUG = dict(zip(PAGES, PAGE_SLUGS))
@@ -1734,6 +1736,296 @@ elif page == PAGES[10]:
         st.dataframe(display[["game_name", "DAU", "MAU", "ARPU", "ARPDAU",
                               "D1", "D7", "D30", "IAP %", "Crash"]],
                      use_container_width=True, hide_index=True)
+
+
+# =========================================================================
+# PAGE 12: 📱 MOBILE PLAYERS (ActivePlayer.io estimated MAU/DAU/CCU)
+# =========================================================================
+elif page == PAGES[11]:
+    st.title("📱 Mobile Player Trends")
+    st.caption(
+        "Estimated MAU/DAU/CCU mobile games by platform (Android/iOS) — "
+        "Source: ActivePlayer.io (modeled from download trends, monthly update). "
+        "⚠️ NOT official publisher data."
+    )
+
+    @st.cache_data(ttl=300)
+    def load_mobile_players() -> pd.DataFrame:
+        with get_connection() as conn:
+            df = pd.read_sql_query(
+                """
+                SELECT g.name as game, g.game_id,
+                       e.snapshot_date, e.metric_name, e.metric_value
+                FROM fact_engagement_metrics e
+                JOIN dim_game g ON e.game_id = g.game_id
+                WHERE e.source='activeplayer'
+                """,
+                conn,
+            )
+        # Split metric_name 'mau_android' → metric='mau', platform='android'
+        if not df.empty:
+            parts = df["metric_name"].str.rsplit("_", n=1, expand=True)
+            df["metric"] = parts[0]
+            df["platform"] = parts[1]
+            df["snapshot_month"] = df["snapshot_date"].str[:7]
+        return df
+
+    mob = load_mobile_players()
+
+    if mob.empty:
+        st.warning(
+            "❌ Chưa có mobile player data. "
+            "Chạy: `python scripts/run_activeplayer.py` (~15 phút, fetch 123 game)"
+        )
+    else:
+        # === KPIs ===
+        mau_df = mob[mob["metric"] == "mau"]
+        latest_month = mau_df["snapshot_month"].max() if not mau_df.empty else None
+        latest_mau = (
+            mau_df[mau_df["snapshot_month"] == latest_month]
+            .groupby("game")["metric_value"].sum().reset_index()
+            if latest_month else pd.DataFrame()
+        )
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Games tracked", mob["game"].nunique())
+        col2.metric("Months tracked", mob["snapshot_month"].nunique())
+        col3.metric("Data points", len(mob))
+        col4.metric(
+            f"Total MAU ({latest_month})",
+            f"{latest_mau['metric_value'].sum():.0f}M" if not latest_mau.empty else "-",
+        )
+
+        st.divider()
+
+        # === Filters ===
+        colf1, colf2 = st.columns(2)
+        with colf1:
+            platform_options = ["combined (Android+iOS)"] + sorted(mob["platform"].unique().tolist())
+            sel_platform = st.selectbox("📊 Platform view", platform_options)
+        with colf2:
+            top_n = st.slider("Top N games", 10, 50, 25)
+
+        # === Compute MAU by game (selected platform view) ===
+        if sel_platform.startswith("combined"):
+            mau_view = (
+                mau_df.groupby(["game", "snapshot_month"], as_index=False)["metric_value"].sum()
+            )
+            platform_label = "Combined"
+        else:
+            mau_view = mau_df[mau_df["platform"] == sel_platform].copy()
+            platform_label = sel_platform.upper()
+
+        # === Top-N leaderboard (latest month) ===
+        st.subheader(f"🏆 Top {top_n} Mobile Games — {platform_label} MAU ({latest_month})")
+        latest_top = (
+            mau_view[mau_view["snapshot_month"] == latest_month]
+            .nlargest(top_n, "metric_value")
+        )
+        if not latest_top.empty:
+            fig_bar = px.bar(
+                latest_top, x="metric_value", y="game", orientation="h",
+                labels={"metric_value": "MAU (millions)", "game": ""},
+                title=f"Top {len(latest_top)} Mobile Games by MAU — {latest_month}",
+            )
+            fig_bar.update_yaxes(autorange="reversed")
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+            # Table view
+            display = latest_top[["game", "metric_value"]].copy()
+            display["MAU"] = display["metric_value"].apply(lambda x: f"{x:.1f}M")
+            display = display[["game", "MAU"]]
+            display.columns = ["Game", f"MAU ({platform_label})"]
+            st.dataframe(display, use_container_width=True, hide_index=True)
+        else:
+            st.info("Không có data cho platform/tháng đã chọn.")
+
+        # === Snapshot: CCU + DAU (current month only) ===
+        # ActivePlayer.io publishes a separate snapshot block per game with CCU
+        # (concurrent) and DAU ranges for the rolling "last 30 days". These don't
+        # have 12-month history like MAU, so we show them as a one-month snapshot.
+        ccu_df = mob[mob["metric"].isin(["ccu", "dau"])]
+        if not ccu_df.empty:
+            st.divider()
+            st.subheader("⚡ Concurrent Players (CCU) & Daily Active (DAU) — latest snapshot")
+            st.caption(
+                "CCU/DAU là snapshot hiện tại (rolling 30 days), KHÔNG có history 12 tháng như MAU. "
+                "⚠️ ActivePlayer.io dùng BUCKET RANGES (vd 3.1M-7.6M) → nhiều game cùng CCU. "
+                "Treat as order-of-magnitude, không phải exact ranking."
+            )
+            snapshot_pivot = (
+                ccu_df.pivot_table(
+                    index="game", columns="metric_name", values="metric_value", aggfunc="first",
+                )
+                .reset_index()
+            )
+            # Sum android+ios for combined view
+            for m in ("ccu", "dau"):
+                a_col, i_col = f"{m}_android", f"{m}_ios"
+                if a_col in snapshot_pivot.columns and i_col in snapshot_pivot.columns:
+                    snapshot_pivot[f"{m}_total"] = (
+                        snapshot_pivot[a_col].fillna(0) + snapshot_pivot[i_col].fillna(0)
+                    )
+                elif a_col in snapshot_pivot.columns:
+                    snapshot_pivot[f"{m}_total"] = snapshot_pivot[a_col]
+                elif i_col in snapshot_pivot.columns:
+                    snapshot_pivot[f"{m}_total"] = snapshot_pivot[i_col]
+
+            sort_col = "ccu_total" if "ccu_total" in snapshot_pivot.columns else None
+            if sort_col:
+                snapshot_top = snapshot_pivot.nlargest(top_n, sort_col)
+                # Display table
+                disp = snapshot_top[["game"]].copy()
+                for col, label in [
+                    ("ccu_android", "CCU Android"), ("ccu_ios", "CCU iOS"),
+                    ("dau_android", "DAU Android"), ("dau_ios", "DAU iOS"),
+                ]:
+                    if col in snapshot_top.columns:
+                        disp[label] = snapshot_top[col].apply(
+                            lambda x: f"{x:.2f}M" if pd.notna(x) else "-"
+                        )
+                disp.columns = ["Game"] + [c for c in disp.columns[1:]]
+                st.dataframe(disp, use_container_width=True, hide_index=True)
+
+                # Bar chart: combined CCU vs DAU
+                chart_df = snapshot_top.melt(
+                    id_vars="game",
+                    value_vars=[c for c in ["ccu_total", "dau_total"] if c in snapshot_top.columns],
+                    var_name="Metric", value_name="Value (M)",
+                ).dropna(subset=["Value (M)"])
+                chart_df["Metric"] = chart_df["Metric"].map(
+                    {"ccu_total": "CCU (concurrent)", "dau_total": "DAU (daily)"}
+                )
+                if not chart_df.empty:
+                    fig_snap = px.bar(
+                        chart_df, x="Value (M)", y="game", color="Metric",
+                        orientation="h", barmode="group",
+                        title=f"Top {len(snapshot_top)} — CCU vs DAU (Android+iOS combined)",
+                        labels={"game": ""},
+                    )
+                    fig_snap.update_yaxes(autorange="reversed")
+                    st.plotly_chart(fig_snap, use_container_width=True)
+
+        st.divider()
+
+        # === Trend chart (game multiselect) ===
+        st.subheader("📈 MAU Trend")
+        st.caption("Monthly Active Users (estimated) cho games đã chọn")
+        all_games = sorted(mau_view["game"].unique())
+        # Default: top 5 by latest month
+        default_games = (
+            latest_top.nlargest(5, "metric_value")["game"].tolist()
+            if not latest_top.empty else all_games[:5]
+        )
+        selected_games = st.multiselect(
+            "🎮 Games so sánh", all_games, default=default_games,
+            key="mobile_players_trend_games",
+        )
+        if selected_games:
+            trend_df = (
+                mau_view[mau_view["game"].isin(selected_games)]
+                .pivot_table(index="snapshot_month", columns="game",
+                             values="metric_value", aggfunc="sum")
+                .fillna(0)
+                .sort_index()
+            )
+            st.plotly_chart(
+                px.line(
+                    trend_df, x=trend_df.index, y=trend_df.columns,
+                    labels={"value": "MAU (M)", "snapshot_month": "Month"},
+                    title=f"MAU Trend — {platform_label}",
+                ),
+                use_container_width=True,
+            )
+        else:
+            st.info("Chọn ít nhất 1 game.")
+
+        st.divider()
+
+        # === Platform split (Android vs iOS) — chỉ khi có cả 2 platform ===
+        platforms_available = sorted(mau_df["platform"].unique())
+        if len(platforms_available) >= 2 and "android" in platforms_available and "ios" in platforms_available:
+            st.subheader(f"🤖 Android vs 🍎 iOS — MAU share ({latest_month})")
+            platform_split = (
+                mau_df[mau_df["snapshot_month"] == latest_month]
+                .groupby(["game", "platform"], as_index=False)["metric_value"].sum()
+            )
+            top_games_split = (
+                platform_split.groupby("game")["metric_value"].sum()
+                .nlargest(15).index.tolist()
+            )
+            split_top = platform_split[platform_split["game"].isin(top_games_split)]
+            fig_split = px.bar(
+                split_top, x="game", y="metric_value", color="platform",
+                barmode="group",
+                labels={"metric_value": "MAU (M)", "game": ""},
+                title=f"Top 15 games — Android vs iOS MAU ({latest_month})",
+                color_discrete_map={"android": "#3DDC84", "ios": "#007AFF"},
+            )
+            fig_split.update_xaxes(tickangle=-45)
+            st.plotly_chart(fig_split, use_container_width=True)
+            st.caption(
+                "💡 Game nào iOS > Android thường là casual/arcade phương Tây. "
+                "Game Android > iOS thường là MOBA/BR emerging-market."
+            )
+
+            st.divider()
+
+        # === MoM momentum ===
+        st.subheader("🚀 Month-over-Month Momentum")
+        st.caption("Game tăng/giảm mạnh nhất giữa 2 tháng gần nhất")
+        months_sorted = sorted(mau_view["snapshot_month"].unique())
+        if len(months_sorted) >= 2:
+            prev_m, curr_m = months_sorted[-2], months_sorted[-1]
+            prev = (
+                mau_view[mau_view["snapshot_month"] == prev_m]
+                .groupby("game", as_index=False)["metric_value"].sum()
+                .rename(columns={"metric_value": "prev_mau"})
+            )
+            curr = (
+                mau_view[mau_view["snapshot_month"] == curr_m]
+                .groupby("game", as_index=False)["metric_value"].sum()
+                .rename(columns={"metric_value": "curr_mau"})
+            )
+            mom = prev.merge(curr, on="game")
+            mom["abs_change"] = mom["curr_mau"] - mom["prev_mau"]
+            mom["pct_change"] = mom.apply(
+                lambda r: (r["abs_change"] / r["prev_mau"] * 100) if r["prev_mau"] > 0 else None,
+                axis=1,
+            )
+            mom = mom.dropna(subset=["pct_change"])
+
+            colm1, colm2 = st.columns(2)
+            with colm1:
+                st.markdown(f"**🔺 Top 10 tăng ({curr_m})**")
+                top_risers = mom.nlargest(10, "pct_change")
+                riser_disp = top_risers[["game", "curr_mau", "pct_change"]].copy()
+                riser_disp["MAU"] = riser_disp["curr_mau"].apply(lambda x: f"{x:.1f}M")
+                riser_disp["MoM%"] = riser_disp["pct_change"].apply(lambda x: f"+{x:.1f}%")
+                st.dataframe(
+                    riser_disp[["game", "MAU", "MoM%"]].rename(
+                        columns={"game": "Game"}
+                    ),
+                    use_container_width=True, hide_index=True,
+                )
+            with colm2:
+                st.markdown(f"**🔻 Top 10 giảm ({curr_m})**")
+                top_fallers = mom.nsmallest(10, "pct_change")
+                faller_disp = top_fallers[["game", "curr_mau", "pct_change"]].copy()
+                faller_disp["MAU"] = faller_disp["curr_mau"].apply(lambda x: f"{x:.1f}M")
+                faller_disp["MoM%"] = faller_disp["pct_change"].apply(lambda x: f"{x:.1f}%")
+                st.dataframe(
+                    faller_disp[["game", "MAU", "MoM%"]].rename(
+                        columns={"game": "Game"}
+                    ),
+                    use_container_width=True, hide_index=True,
+                )
+
+        st.caption(
+            "💡 Data từ ActivePlayer.io — ESTIMATE modeled from download trends. "
+            "Refresh monthly: `python scripts/run_activeplayer.py`. "
+            "ToS: docs/tos_compliance.md (Tier 1 ✅)."
+        )
 
 
 # ---- Footer --------------------------------------------------------------

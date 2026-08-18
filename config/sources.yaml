@@ -60,3 +60,23 @@ news:
     RSS feeds (Verge/Polygon/IGN/Eurogamer/TouchArcade/RPS) — publish cho syndication.
     Reddit: JSON endpoint public, không cần OAuth với rate limit nhẹ.
     Steam News API: cần STEAM_API_KEY (same as Steam crawler).
+
+activeplayer:
+  name: "ActivePlayer.io (estimated mobile MAU/DAU/CCU)"
+  base_url: "https://activeplayer.io"
+  sitemap_url: "https://activeplayer.io/sitemap_index.xml"
+  category_url: "https://activeplayer.io/category/mobile/"
+  # ActivePlayer.io: HTML pages per-game (no JSON API). robots.txt Allow all except /wp-admin/.
+  # ToS has no anti-scraping clause. 123 mobile games × 1 fetch/month = ~15 min, polite 6s+jitter.
+  rate_limit_ms: 6000
+  jitter_ms: 3000           # random 0-3s jitter added on top of rate_limit_ms
+  max_retries: 3
+  backoff_seconds: 5
+  needs_auth: false
+  tos_url: "https://activeplayer.io/terms-and-conditions/"
+  notes: >
+    Estimated player counts (MAU/DAU/CCU) by platform (Google Play Android / App Store iOS).
+    HTML per-game pages, parse with BeautifulSoup. 12-month history (rolling window).
+    DATA IS ESTIMATE (modeled from download trends) — NOT official publisher numbers.
+    ToS check: 2026-08-10, see docs/tos_compliance.md. robots.txt: only /wp-admin/ disallowed.
+

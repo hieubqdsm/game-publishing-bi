@@ -69,6 +69,29 @@
 - **Quyết định:** Manual mode = hợp lệ + transparent. Auto-scrap bị block + sai ToS.
 - **Cập nhật:** 2026-07-28
 
+### ActivePlayer.io — Tier 1 ✅ (automated fetch, rate-limited)
+- **Nguồn:** https://activeplayer.io — estimated MAU/DAU/CCU mobile games by platform (Android/iOS)
+- **Endpoint:** `https://activeplayer.io/<game-slug>/` — HTML per-game page (no JSON API)
+- **ToS:** https://activeplayer.io/terms-and-conditions/ (read 2026-08-10)
+- **robots.txt:** `User-agent: * / Disallow: /wp-admin/` — game pages Allow cho mọi bot
+  (verify: https://activeplayer.io/robots.txt)
+- **Method:** `BaseCrawler` HTTP fetch với rate limit 6s + jitter 0-3s giữa requests (~7s/game).
+  ToS không có clause cấm scraping/crawling/bots (chỉ "Reproduction prohibited" áp cho
+  design/text — facts như numbers không có copyright).
+- **Auth:** Không cần (công khai, không login, không paywall)
+- **Rate limit:** Polite 6s+jitter. 123 game/tháng = ~15 phút, way dưới ngưỡng bất thường.
+- **Disclaimer site:** *"All data are from various sources we estimate the values"* — data là
+  **estimate** (model từ download trends), không phải số publisher thật.
+- **Pipeline:** `src/crawlers/activeplayer_crawler.py` (BeautifulSoup parse HTML table)
+  → CLI: `python scripts/run_activeplayer.py`
+- **Audit:** mỗi fact có `source='activeplayer'` trong `fact_engagement_metrics` + `fetched_at` timestamp
+- **Coverage:** ~123 mobile games (directory), 12 tháng history (Aug 2025 → Jul 2026),
+  tách Google Play / App Store riêng. 1 số game (Candy Crush) không có history table → skip.
+- **Quyết định:** Auto-fetch rate-limited = hợp lệ (vs gacha manual). ToS không cấm, robots allow,
+  không login. Data label rõ "estimated" trong dashboard. Đáng tin hơn các site Tier 3
+  (Sensor Tower/data.ai/SteamDB) vì những site đó có clause cấm rõ + login-gated.
+- **Cập nhật:** 2026-08-10
+
 ---
 
 ## ⚠️ Tier 2 — Grey zone (chưa dùng, có thể thêm sau)
@@ -121,3 +144,4 @@ Nếu câu trả lời không rõ ràng → **không thêm**. Ưu tiên ethics o
 | Date | Source | Action | Note |
 |------|--------|--------|------|
 | 2026-07-27 | Steam, iTunes, IGDB | Initial ToS check | Tất cả Tier 1, hợp pháp |
+| 2026-08-10 | ActivePlayer.io | Initial ToS check + add source | Tier 1: ToS không cấm scrap, robots allow, no login. Auto-fetch rate-limited OK. |

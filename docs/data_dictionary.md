@@ -122,11 +122,25 @@ Cho phép lưu bất kỳ metric nào từ Reddit, YouTube, reviews sentiment...
 | `metric_id` | INTEGER PK | Auto |
 | `game_id` | INTEGER FK | → `dim_game.game_id` |
 | `snapshot_date` | TEXT | ISO date |
-| `source` | TEXT | `"reddit"`, `"youtube"`, `"steam_reviews"` |
-| `metric_name` | TEXT | `"mentions"`, `"views"`, `"sentiment_score"` |
+| `source` | TEXT | `"reddit"`, `"youtube"`, `"steam_reviews"`, `"activeplayer"` |
+| `metric_name` | TEXT | `"mentions"`, `"views"`, `"sentiment_score"`, `"mau_android"`, `"mau_ios"`, ... |
 | `metric_value` | REAL | Giá trị numeric |
 
 **Constraints:** `UNIQUE(game_id, snapshot_date, source, metric_name)`.
+
+**ActivePlayer.io conventions:**
+- `source = 'activeplayer'` — estimated mobile player counts (NOT official).
+- `metric_name` pattern: `<metric>_<platform>` where `<metric>` ∈ {`mau`, `dau`, `ccu`}
+  and `<platform>` ∈ {`android`, `ios`, `combined`}. Example: `mau_android` = Monthly Active Users on Google Play.
+- `metric_value` = **millions** of users (e.g. 73.2 = 73.2M MAU).
+  For ranges like "3.1M – 7.6M", the midpoint (5.35) is stored.
+- `snapshot_date` = `<YYYY-MM>-01` (first of month — data is monthly).
+- **MAU** has 12-month rolling history (per-month rows, ~12 datapoints/game/platform).
+- **CCU + DAU** are snapshot-only (current month, no history) — ActivePlayer.io
+  publishes them as bucket ranges (e.g. "3.1M – 7.6M") → many top games share the
+  same CCU value. Treat as order-of-magnitude, not exact ranking.
+- Coverage: ~111 mobile games with history, refresh monthly.
+- ToS: Tier 1 ✅ (see `docs/tos_compliance.md`).
 
 ---
 
