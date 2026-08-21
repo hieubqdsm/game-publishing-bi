@@ -1,139 +1,216 @@
 # 🎮 Game Publishing BI Pipeline
 
-> Pipeline thu thập data thật từ các nguồn công khai (Steam, iTunes, IGDB) → SQLite → Power BI dashboard. Phục vụ mục đích **Game Publishing BI Analyst** (đánh giá portfolio, market trend, deal assessment).
-
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> 🤖 **Mở project bằng AI agent (ZCode/Claude/Cursor)?** Đọc [`AGENTS.md`](AGENTS.md) trước — file đó chứa đầy đủ context để agent tự hiểu project và tiếp tục làm mà không cần giải thích lại.
+> A data pipeline collecting real game-industry data from public sources (Steam, iTunes, RSS news, ActivePlayer.io) → SQLite star schema → Power BI. Built as a portfolio project simulating the work of a **Game Publishing BI Analyst** — market trends, deal evaluation, player engagement.
 
-## 🎯 Mục tiêu dự án
+> 🤖 **Opening this project with an AI agent (ZCode/Claude/Cursor)?** Read [`AGENTS.md`](AGENTS.md) first — it contains full context so the agent can pick up where you left off.
 
-Đây là project cá nhân mô phỏng công việc thực tế của vị trí **BI Analyst trong ngành mobile/PC game publishing**. Pipeline thu thập các loại dữ liệu:
+---
 
-| Loại data | Nguồn | Tần suất |
-|-----------|-------|----------|
-| Game catalog (metadata, genre, platform) | IGDB API | Daily |
-| Player counts, reviews, prices (PC) | Steam Web API | Daily |
-| App info, top charts (iOS) | iTunes Search API | Daily |
-| Ad creatives (UA spying) | Meta/TikTok Ad Library | *(sau MVP)* |
-| Community sentiment | Reddit, YouTube | *(sau MVP)* |
+## 🇬🇧 English
 
-## ⚖️ Tuyên bố pháp lý & Đạo đức
+### 🎯 What this project does
 
-Dự án **CHỈ** sử dụng:
-- API chính thức của các nền tảng (theo ToS)
+Personal portfolio project modeling the day-to-day work of a **BI Analyst in mobile/PC game publishing**. The pipeline collects:
+
+| Data type | Source | Frequency |
+|-----------|--------|-----------|
+| Player counts, reviews, prices (PC) | Steam Web API | Hourly |
+| App info, top charts (iOS US+VN) | iTunes Search API | Every 30 min |
+| Gaming + AI news (10 RSS outlets) | RSS + Hacker News + Steam News | Every 4h |
+| Gacha revenue (top 50/month) | Manual HTML import (Sensor Tower public reports) | Monthly |
+| Mobile MAU/DAU/CCU (~123 games) | ActivePlayer.io | Monthly |
+| Game catalog metadata | IGDB API | Daily |
+
+**Pipeline features:** hourly scheduler (no cron needed), FastAPI server for Power BI Web connector, CSV exports, Streamlit inspector dashboard (12 pages), data quality checks, ToS-compliant rate limiting, idempotent upserts.
+
+### ⚖️ Legal & Ethics
+
+This project **only** uses:
+- Official platform APIs (per their ToS)
 - Public RSS feeds
-- Báo cáo đã được publish công khai
+- Publicly published reports
 
-**KHÔNG** sử dụng: scrap Sensor Tower, data.ai, AppMagic, SteamDB (login-gated / ToS cấm). Chi tiết tại [`docs/tos_compliance.md`](docs/tos_compliance.md).
+It does **NOT** scrape Sensor Tower, data.ai, AppMagic or SteamDB (login-gated / ToS-prohibited). Full ethics log: [`docs/tos_compliance.md`](docs/tos_compliance.md).
 
-## 🚀 Quick Start
-
-### 1. Cài đặt dependencies
+### 🚀 Quick Start
 
 ```bash
-git clone <repo-url> sensortower
+git clone git@github.com:hieubqdsm/sensortower.git
 cd sensortower
 python -m venv .venv
-.venv\Scripts\activate         # Windows
-# source .venv/bin/activate    # Mac/Linux
+source .venv/bin/activate       # Mac/Linux — Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+
+cp .env.example .env            # fill in real API keys (all free)
+
+python scripts/init_db.py       # create SQLite schema + dim_date
+python scripts/run_daily.py --dry-run   # verify credentials, no crawling
+python scripts/run_daily.py     # full pipeline run
+python scripts/run_news.py      # news crawl (RSS + HN + Steam News)
 ```
 
-### 2. Đăng ký API keys (tất cả FREE)
+**API keys (all free):**
 
-| Service | Link đăng ký | Cần gì |
-|---------|-------------|--------|
-| Steam Web API | https://steamcommunity.com/dev/apikey | Login Steam |
-| Twitch / IGDB | https://dev.twitch.tv/console | Tạo app → Client ID + Secret |
-| iTunes Search | *(không cần)* | Free public API |
+| Service | Sign up | Requirement |
+|---------|---------|-------------|
+| Steam Web API | https://steamcommunity.com/dev/apikey | Steam login |
+| Twitch / IGDB | https://dev.twitch.tv/console | Create app → Client ID + Secret |
+| iTunes Search | — | Free public API |
+| ActivePlayer.io | — | Free public pages |
 
-### 3. Cấu hình env
+### 🖥️ Running components
 
 ```bash
-cp .env.example .env
-# Edit .env, điền key thật
+python scripts/serve_pipeline.py   # background scheduler: Steam hourly, iTunes :30, news every 4h
+python scripts/serve_api.py        # FastAPI on :8000 — JSON/CSV endpoints for Power BI (X-API-Key auth)
+python scripts/export_csv.py --flat # BI-ready flat CSV exports
+streamlit run dashboard/app.py     # 12-page data inspector on :8501
+python scripts/data_quality.py     # freshness/anomaly/integrity alerts
 ```
 
-### 4. Khởi tạo database & chạy pipeline
+Dashboard pages: Portfolio Overview · Daily News · Rankings & Trends · Steam CCU · Genre & Publisher · Genre Trends · Game Detail · Deal Evaluation · Gacha Revenue · UA Performance · Retention & DAU · Mobile Players.
 
-```bash
-# Tạo schema SQLite
-python scripts/init_db.py
-
-# Chạy full pipeline (lấy top 100 mỗi nguồn)
-python scripts/run_daily.py
-```
-
-### 5. Crawl news (morning briefing)
-
-```bash
-python scripts/run_news.py                    # 24h gần nhất (RSS + HN + Steam News)
-python scripts/run_news.py --hours 6          # 6h gần nhất
-```
-
-### 6. Xem data đã crawl (Streamlit inspector)
-
-```bash
-streamlit run dashboard/app.py
-# → mở http://localhost:8501
-```
-
-5 trang dashboard: Portfolio Overview · **Daily News** · Rankings & Trends · Genre & Publisher · Game Detail
-
-### 7. Mở Power BI
-
-1. Mở `powerbi/sensortower.pbix` bằng Power BI Desktop
-2. Connection details: [`powerbi/data_sources.md`](powerbi/data_sources.md)
-
-## 📁 Cấu trúc dự án
+### 📁 Project structure
 
 ```
 sensortower/
-├── config/          # Settings, env, source config
+├── config/          # settings, source configs (rate limits, ToS URLs)
 ├── src/
-│   ├── crawlers/    # Steam, iTunes, IGDB crawlers
-│   ├── transforms/  # Raw → dim/fact tables
-│   ├── storage/     # SQLite helpers
-│   └── pipeline.py  # Orchestrator
-├── data/
-│   ├── raw/         # JSON responses (audit)
-│   └── *.db         # SQLite database
-├── scripts/         # Entry points (init, run_daily)
-├── powerbi/         # .pbix dashboard files
-└── docs/            # Data dictionary, ToS, methodology
+│   ├── crawlers/    # Steam, iTunes, IGDB, News, ActivePlayer crawlers
+│   ├── transforms/  # raw → dim/fact tables
+│   ├── storage/     # SQLite schema + helpers
+│   ├── api/         # FastAPI app
+│   └── pipeline.py  # orchestrator (failure isolation per source)
+├── scripts/         # CLI entry points
+├── dashboard/       # Streamlit inspector
+├── powerbi/         # Power BI connection guide
+└── docs/            # data dictionary, ToS compliance, methodology
 ```
 
-## 📊 Data Model (Star Schema)
+### 📊 Data model
 
-Xem chi tiết tại [`docs/data_dictionary.md`](docs/data_dictionary.md).
+Star schema in SQLite — full dictionary at [`docs/data_dictionary.md`](docs/data_dictionary.md):
 
 ```
-   dim_game ◄─────── fact_steam_playercounts
-       ▲            ── fact_itunes_rankings
-   dim_date         ── fact_engagement_metrics
-       ▲
-   dim_publisher
+dim_game ◄──── fact_steam_playercounts      (daily + hourly CCU)
+   ▲          ── fact_steam_hourly_ccu
+dim_date      ── fact_itunes_rankings       (US + VN charts)
+   ▲          ── fact_news                  (RSS/HN/Steam news)
+dim_publisher ── fact_gacha_revenue         (monthly top-50)
+dim_news_source fact_engagement_metrics     (ActivePlayer MAU/DAU/CCU)
 ```
 
-## 🔁 Chạy hàng ngày (Mac 24/7)
+### 🛣️ Roadmap
 
-```bash
-# Cron entry (Mac/Linux)
-0 2 * * * cd ~/sensortower && .venv/bin/python scripts/run_daily.py >> logs/$(date +\%F).log 2>&1
-```
+- [x] MVP: Steam + iTunes + IGDB → SQLite → Power BI
+- [x] News pipeline (gaming + AI RSS, Hacker News, Steam News)
+- [x] Hourly pipeline scheduler (`serve_pipeline.py`)
+- [x] FastAPI server + CSV exports for Power BI
+- [x] Streamlit inspector dashboard (12 pages)
+- [x] Deal evaluation scorecard (VN-validated criteria)
+- [x] Gacha revenue tracker + ActivePlayer mobile metrics
+- [ ] Power BI dashboard (user-built, see `powerbi/data_sources.md`)
+- [ ] IGDB crawler activation (needs Twitch key)
+- [ ] Cloudflare tunnel for public API access
 
-Đồng bộ SQLite về PC qua iCloud/Dropbox để Power BI đọc.
-
-## 🛣️ Roadmap
-
-- [x] **MVP**: Steam + iTunes + IGDB → SQLite → Power BI
-- [ ] Mở rộng: Meta Ad Library, Reddit, YouTube
-- [ ] Deal evaluation model (ROAS/LTV)
-- [ ] Cohort retention dashboard
-- [ ] Scheduler nâng cao (APScheduler)
-
-## 📝 License
+### 📝 License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+## 🇻🇳 Tiếng Việt
+
+> Pipeline thu thập data thật từ các nguồn công khai (Steam, iTunes, RSS news, ActivePlayer.io) → SQLite → Power BI dashboard. Phục vụ mục đích **Game Publishing BI Analyst** (đánh giá portfolio, market trend, deal assessment).
+
+### 🎯 Mục tiêu dự án
+
+Project cá nhân mô phỏng công việc thực tế của vị trí **BI Analyst trong ngành mobile/PC game publishing**:
+
+| Loại data | Nguồn | Tần suất |
+|-----------|-------|----------|
+| Player counts, reviews, prices (PC) | Steam Web API | Mỗi giờ |
+| App info, top charts (iOS US+VN) | iTunes Search API | Mỗi 30 phút |
+| Tin game + AI (10 nguồn RSS) | RSS + Hacker News + Steam News | Mỗi 4h |
+| Gacha revenue (top 50/tháng) | Import HTML thủ công (báo cáo public của Sensor Tower) | Hàng tháng |
+| Mobile MAU/DAU/CCU (~123 game) | ActivePlayer.io | Hàng tháng |
+| Game catalog metadata | IGDB API | Daily |
+
+**Tính năng pipeline:** scheduler tự chạy theo giờ (không cần cron), FastAPI server cho Power BI Web connector, export CSV, dashboard Streamlit inspector (12 trang), data quality checks, rate limit theo ToS, UPSERT idempotent.
+
+### ⚖️ Tuyên bố pháp lý & Đạo đức
+
+Dự án **CHỈ** sử dụng API chính thức (theo ToS), public RSS feeds, và báo cáo đã publish công khai.
+
+**KHÔNG** scrap Sensor Tower, data.ai, AppMagic, SteamDB (login-gated / ToS cấm). Chi tiết: [`docs/tos_compliance.md`](docs/tos_compliance.md).
+
+### 🚀 Quick Start
+
+```bash
+git clone git@github.com:hieubqdsm/sensortower.git
+cd sensortower
+python -m venv .venv
+source .venv/bin/activate       # Mac/Linux — Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+cp .env.example .env            # điền API key thật (đều free)
+
+python scripts/init_db.py       # tạo schema SQLite + dim_date
+python scripts/run_daily.py --dry-run   # kiểm tra credentials, không crawl
+python scripts/run_daily.py     # chạy full pipeline
+python scripts/run_news.py      # crawl tin tức
+```
+
+**API keys (đều free):**
+
+| Service | Đăng ký | Cần gì |
+|---------|---------|--------|
+| Steam Web API | https://steamcommunity.com/dev/apikey | Login Steam |
+| Twitch / IGDB | https://dev.twitch.tv/console | Tạo app → Client ID + Secret |
+| iTunes Search | — | Free public API |
+| ActivePlayer.io | — | Trang public free |
+
+### 🖥️ Chạy các thành phần
+
+```bash
+python scripts/serve_pipeline.py    # scheduler nền: Steam mỗi giờ, iTunes :30, news mỗi 4h
+python scripts/serve_api.py         # FastAPI :8000 — JSON/CSV cho Power BI (auth X-API-Key)
+python scripts/export_csv.py --flat # export CSV phẳng sẵn cho BI
+streamlit run dashboard/app.py      # inspector 12 trang tại :8501
+python scripts/data_quality.py      # cảnh báo freshness/anomaly/integrity
+```
+
+Dashboard gồm 12 trang: Portfolio Overview · Daily News · Rankings & Trends · Steam CCU · Genre & Publisher · Genre Trends · Game Detail · Deal Evaluation · Gacha Revenue · UA Performance · Retention & DAU · Mobile Players.
+
+### 📊 Data Model (Star Schema)
+
+Xem chi tiết tại [`docs/data_dictionary.md`](docs/data_dictionary.md):
+
+```
+dim_game ◄──── fact_steam_playercounts      (CCU daily + hourly)
+   ▲          ── fact_steam_hourly_ccu
+dim_date      ── fact_itunes_rankings       (chart US + VN)
+   ▲          ── fact_news                  (RSS/HN/Steam news)
+dim_publisher ── fact_gacha_revenue         (top-50 hàng tháng)
+dim_news_source fact_engagement_metrics     (ActivePlayer MAU/DAU/CCU)
+```
+
+### 🛣️ Roadmap
+
+- [x] **MVP**: Steam + iTunes + IGDB → SQLite → Power BI
+- [x] News pipeline (RSS gaming + AI, Hacker News, Steam News)
+- [x] Pipeline scheduler theo giờ (`serve_pipeline.py`)
+- [x] FastAPI server + CSV exports cho Power BI
+- [x] Dashboard Streamlit inspector (12 trang)
+- [x] Deal evaluation scorecard (tiêu chí validated VN)
+- [x] Gacha revenue tracker + ActivePlayer mobile metrics
+- [ ] Power BI dashboard (user tự build theo `powerbi/data_sources.md`)
+- [ ] Kích hoạt IGDB crawler (cần Twitch key)
+- [ ] Cloudflare tunnel public API
+
+### 📝 License
+
+MIT — xem [LICENSE](LICENSE).
