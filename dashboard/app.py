@@ -155,6 +155,86 @@ slug = qp.get("page", "overview")
 page = SLUG_TO_PAGE.get(slug, PAGES[0])
 
 
+# ---- i18n: VI (mặc định) / EN — switch ở sidebar, lưu ?lang= giữ khi reload ----
+LANG_VI, LANG_EN = "vi", "en"
+
+TRANSLATIONS: dict[str, dict[str, str]] = {
+    # Sidebar
+    "app.subtitle": {"vi": "Crawler data inspector", "en": "Crawler data inspector"},
+    "refresh.help": {"vi": "Clear cache, đọc lại từ DB", "en": "Clear cache, reload from DB"},
+    "nav.pages": {"vi": "#### 📑 Trang", "en": "#### 📑 Pages"},
+    "nav.tip": {
+        "vi": "💡 URL `?page=...` giữ trang khi reload/F5.",
+        "en": "💡 URL `?page=...` keeps the page on reload/F5.",
+    },
+    "nav.note": {
+        "vi": "Power BI dashboard build riêng — đây chỉ là inspector.",
+        "en": "The real Power BI dashboard is separate — this is just an inspector.",
+    },
+    "sidebar.csv_caption": {
+        "vi": "CSV: tải file tĩnh. Cần re-export để update.",
+        "en": "CSV: static files. Re-export to update.",
+    },
+    "sidebar.api_caption": {
+        "vi": "Live API: data realtime từ DB. Power BI → Get Data → Web → URL + header `X-API-Key`.",
+        "en": "Live API: real-time from DB. Power BI → Get Data → Web → URL + header `X-API-Key`.",
+    },
+    # Lookback options (News)
+    "lookback.1d": {"vi": "1 ngày", "en": "1 day"},
+    "lookback.3d": {"vi": "3 ngày", "en": "3 days"},
+    "lookback.7d": {"vi": "1 tuần", "en": "1 week"},
+    "lookback.30d": {"vi": "1 tháng", "en": "1 month"},
+    "lookback.365d": {"vi": "1 năm", "en": "1 year"},
+    "lookback.all": {"vi": "Tất cả", "en": "All"},
+    # Page captions (titles đã English sẵn)
+    "cap.overview": {
+        "vi": "Tổng quan data đã crawl từ các nguồn",
+        "en": "Overview of crawled data across sources",
+    },
+    "cap.rankings": {
+        "vi": "iTunes top chart rankings theo country & chart type",
+        "en": "iTunes top chart rankings by country & chart type",
+    },
+    "cap.genre_publisher": {
+        "vi": "Phân tích market share theo thể loại và publisher",
+        "en": "Market share analysis by genre and publisher",
+    },
+    "cap.game_detail": {"vi": "Deep dive vào 1 game cụ thể", "en": "Deep dive into a single game"},
+    "cap.deal": {
+        "vi": "8 tiêu chí data-validated từ top VN iTunes + VNG/Garena portfolio pattern",
+        "en": "8 data-validated criteria from top VN iTunes + VNG/Garena portfolio patterns",
+    },
+    "cap.gacha": {
+        "vi": "Top 50 mobile gacha revenue hàng tháng — parse từ r/gachagaming monthly reports. "
+              "Source gốc: Sensor Tower mobile estimates (PC/console excluded).",
+        "en": "Top 50 mobile gacha revenue monthly — parsed from r/gachagaming monthly reports. "
+              "Underlying source: Sensor Tower mobile estimates (PC/console excluded).",
+    },
+    # News page
+    "lookback.label": {"vi": "Lookback", "en": "Lookback"},
+    "news.feed_lookback": {"vi": "Feed lookback", "en": "Feed lookback"},
+    "news.empty": {"vi": "Chưa có news trong", "en": "No news in the last"},
+    "news.run_hint": {"vi": "rồi refresh.", "en": "then refresh."},
+}
+
+
+def t(key: str) -> str:
+    """Lấy chuỗi theo ngôn ngữ hiện tại (?lang=vi|en, mặc định vi)."""
+    lang = st.query_params.get("lang", LANG_VI)
+    if lang not in (LANG_VI, LANG_EN):
+        lang = LANG_VI
+    return TRANSLATIONS.get(key, {}).get(lang, key)
+
+
+# Lookback canonical keys — hiển thị qua format_func để đổi ngôn ngữ không break state
+LOOKBACK_KEYS = ["1d", "3d", "7d", "30d", "365d", "all"]
+LOOKBACK_HOURS = {"1d": 24, "3d": 72, "7d": 168, "30d": 720, "365d": 8760, "all": None}
+
+
+def lookback_label(key: str) -> str:
+    return t(f"lookback.{key}")
+
+
 def render_sidebar_data_links() -> None:
     """Render khối DB info + CSV Downloads + Live API endpoints ở cuối sidebar.
 
@@ -168,8 +248,8 @@ def render_sidebar_data_links() -> None:
     # Row counts
     counts = load_table_rowcounts()
     st.sidebar.write("**Rows per table:**")
-    for t, n in counts.items():
-        st.sidebar.write(f"`{t}`: **{n:,}**")
+    for tbl, n in counts.items():
+        st.sidebar.write(f"`{tbl}`: **{n:,}**")
 
     # ---- CSV Downloads (Power BI / Excel) ----
     st.sidebar.divider()
@@ -190,7 +270,7 @@ def render_sidebar_data_links() -> None:
                  "news_flat", "dim_date", "ua_flat", "kpis_flat", "retention_flat"]
     for f in csv_files:
         st.sidebar.markdown(f"&nbsp;&nbsp;[`{f}.csv`]({api_base}/downloads/{f}.csv)")
-    st.sidebar.caption("CSV: tải file tĩnh. Cần re-export để update.")
+    st.sidebar.caption(t("sidebar.csv_caption"))
 
     # Live API endpoints (Power BI Web connector — real-time from DB)
     st.sidebar.write("**🔌 Live API (Power BI Web connector):**")
@@ -207,21 +287,35 @@ def render_sidebar_data_links() -> None:
     ]
     for label, path in api_endpoints:
         st.sidebar.markdown(f"&nbsp;&nbsp;[`{label}`]({api_base}{path})")
-    st.sidebar.caption("Live API: data realtime từ DB. Power BI → Get Data → Web → URL + header `X-API-Key`.")
+    st.sidebar.caption(t("sidebar.api_caption"))
 
 
 # ---- Sidebar: navigation + global state ---------------------------------
-# THỨ TỰ: Title → Menu trang (trên cùng) → DB/CSV/API (dưới)
+# THỨ TỰ: Title → Language → Menu trang (trên cùng) → DB/CSV/API (dưới)
 st.sidebar.title("🎮 Game BI")
-st.sidebar.caption("Crawler data inspector")
+st.sidebar.caption(t("app.subtitle"))
+
+# Language switcher — lưu ?lang= nên giữ nguyên khi reload/F5
+cur_lang = st.query_params.get("lang", LANG_VI)
+if cur_lang not in (LANG_VI, LANG_EN):
+    cur_lang = LANG_VI
+new_lang = st.sidebar.selectbox(
+    "🌐 Language",
+    [LANG_VI, LANG_EN],
+    index=[LANG_VI, LANG_EN].index(cur_lang),
+    format_func=lambda x: "🇻🇳 Tiếng Việt" if x == LANG_VI else "🇬🇧 English",
+)
+if new_lang != cur_lang:
+    st.query_params["lang"] = new_lang
+    st.rerun()
 
 # Refresh button — clear cache
-if st.sidebar.button("🔄 Refresh data", help="Clear cache, đọc lại từ DB"):
+if st.sidebar.button("🔄 Refresh data", help=t("refresh.help")):
     st.cache_data.clear()
     st.rerun()
 
 # Menu trang — đặt NGAY SAU title/refresh để dễ tiếp cận nhất
-st.sidebar.markdown("#### 📑 Trang")
+st.sidebar.markdown(t("nav.pages"))
 for p, slug_i in zip(PAGES, PAGE_SLUGS):
     is_current = (p == page)
     label = f"👉 {p}" if is_current else p
@@ -230,13 +324,13 @@ for p, slug_i in zip(PAGES, PAGE_SLUGS):
         if not is_current:
             st.query_params["page"] = slug_i
             st.rerun()
-st.sidebar.caption("💡 URL `?page=...` giữ trang khi reload/F5.")
+st.sidebar.caption(t("nav.tip"))
 
 # Khối DB info + CSV + Live API — đẩy xuống dưới menu trang
 st.sidebar.divider()
 render_sidebar_data_links()
 st.sidebar.divider()
-st.sidebar.caption("Power BI dashboard build riêng — đây chỉ là inspector.")
+st.sidebar.caption(t("nav.note"))
 
 
 # =========================================================================
@@ -244,7 +338,7 @@ st.sidebar.caption("Power BI dashboard build riêng — đây chỉ là inspecto
 # =========================================================================
 if page == PAGES[0]:
     st.title("📊 Portfolio Overview")
-    st.caption("Tổng quan data đã crawl từ các nguồn")
+    st.caption(t("cap.overview"))
 
     games = load_dim_game()
     rankings = load_fact_rankings()
@@ -316,21 +410,14 @@ elif page == PAGES[1]:
     col_h1, col_h2 = st.columns([1, 3])
     with col_h1:
         lookback = st.selectbox(
-            "Lookback",
-            ["1 ngày", "3 ngày", "1 tuần", "1 tháng", "1 năm", "Tất cả"],
+            t("lookback.label"),
+            LOOKBACK_KEYS,
             index=0,
+            format_func=lookback_label,
         )
-
-    # Map lookback label sang modifier SQLite
-    lookback_map = {
-        "1 ngày": ("1d", 24),
-        "3 ngày": ("3d", 72),
-        "1 tuần": ("7d", 168),
-        "1 tháng": ("30d", 720),
-        "1 năm": ("365d", 8760),
-        "Tất cả": ("all", None),
-    }
-    lookback_key, hours = lookback_map[lookback]
+    lookback_key = lookback  # canonical key ("1d".."all") — không phụ thuộc ngôn ngữ
+    hours = LOOKBACK_HOURS[lookback_key]
+    lookback_display = lookback_label(lookback_key)
 
     # Reset pagination khi đổi lookback (tránh hiển thị trang cũ trên data mới)
     if st.session_state.get("news_lookback") != lookback:
@@ -341,14 +428,14 @@ elif page == PAGES[1]:
 
     if news.empty:
         st.warning(
-            f"❌ Chưa có news trong {lookback}. "
-            f"Chạy: `python scripts/run_news.py --hours {hours or 24}` rồi refresh."
+            f"❌ {t('news.empty')} {lookback_display}. "
+            f"Run: `python scripts/run_news.py --hours {hours or 24}` {t('news.run_hint')}"
         )
         st.stop()
 
     # KPI cards
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric(f"News ({lookback.lower()})", len(news))
+    col1.metric(f"News ({lookback_display.lower()})", len(news))
     col2.metric("Sources", news["source_name"].nunique())
     col3.metric("Matched games", news["game_id"].notna().sum())
     col4.metric("With keywords", news["keywords"].notna().sum() - (news["keywords"] == "").sum())
@@ -398,7 +485,7 @@ elif page == PAGES[1]:
     kw_series.columns = ["Keyword", "Count"]
     if not kw_series.empty:
         fig = px.bar(kw_series, x="Count", y="Keyword", orientation="h",
-                     title=f"Top keywords ({lookback.lower()})")
+                     title=f"Top keywords ({lookback_display.lower()})")
         fig.update_layout(yaxis={"categoryorder": "total ascending"}, height=350)
         st.plotly_chart(fig, use_container_width=True)
     else:
@@ -420,7 +507,7 @@ elif page == PAGES[1]:
         timeline = news_dt.groupby("hour").size().reset_index(name="count")
         if not timeline.empty:
             fig = px.bar(timeline, x="hour", y="count",
-                         title=f"News per hour ({lookback.lower()})")
+                         title=f"News per hour ({lookback_display.lower()})")
             fig.update_layout(height=300, xaxis_title="", yaxis_title="items")
             st.plotly_chart(fig, use_container_width=True)
 
@@ -431,12 +518,14 @@ elif page == PAGES[1]:
     col_feed1, col_feed2 = st.columns([1, 3])
     with col_feed1:
         feed_lookback = st.selectbox(
-            "Feed lookback",
-            ["1 ngày", "3 ngày", "1 tuần", "1 tháng", "1 năm", "Tất cả"],
-            index=["1 ngày", "3 ngày", "1 tuần", "1 tháng", "1 năm", "Tất cả"].index(lookback),
+            t("news.feed_lookback"),
+            LOOKBACK_KEYS,
+            index=LOOKBACK_KEYS.index(lookback),
+            format_func=lookback_label,
             key="news_feed_lookback",
         )
-    feed_key, feed_hours = lookback_map[feed_lookback]
+    feed_key = feed_lookback  # canonical key
+    feed_hours = LOOKBACK_HOURS[feed_lookback]
 
     # Re-query data riêng cho feed (có thể khác lookback phía trên)
     feed_news = load_fact_news(feed_hours or 24, feed_key)
@@ -535,7 +624,7 @@ elif page == PAGES[1]:
 # =========================================================================
 elif page == PAGES[2]:
     st.title("🏆 Rankings & Trends")
-    st.caption("iTunes top chart rankings theo country & chart type")
+    st.caption(t("cap.rankings"))
 
     rankings = load_fact_rankings()
     games = load_dim_game()
@@ -752,7 +841,7 @@ elif page == PAGES[3]:
 # =========================================================================
 elif page == PAGES[4]:
     st.title("🎭 Genre & Publisher Analysis")
-    st.caption("Phân tích market share theo thể loại và publisher")
+    st.caption(t("cap.genre_publisher"))
 
     games = load_dim_game()
     rankings = load_fact_rankings()
@@ -819,7 +908,7 @@ elif page == PAGES[4]:
 # =========================================================================
 elif page == PAGES[6]:
     st.title("🔍 Game Detail")
-    st.caption("Deep dive vào 1 game cụ thể")
+    st.caption(t("cap.game_detail"))
 
     games = load_dim_game()
     rankings = load_fact_rankings()
@@ -1023,7 +1112,7 @@ elif page == PAGES[5]:
 # =========================================================================
 elif page == PAGES[7]:
     st.title("💼 Deal Evaluation — VN Market")
-    st.caption("8 tiêu chí data-validated từ top VN iTunes + VNG/Garena portfolio pattern")
+    st.caption(t("cap.deal"))
 
     # ---- Input -----------------------------------------------------------
     st.subheader("📝 Game Submission")
@@ -1329,10 +1418,7 @@ elif page == PAGES[7]:
 # =========================================================================
 elif page == PAGES[8]:
     st.title("💰 Gacha Revenue Tracker")
-    st.caption(
-        "Top 50 mobile gacha revenue hàng tháng — OCR từ r/gachagaming monthly reports. "
-        "Source gốc: Sensor Tower mobile estimates (PC/console excluded)."
-    )
+    st.caption(t("cap.gacha"))
 
     @st.cache_data(ttl=300)
     def load_gacha_revenue() -> pd.DataFrame:
