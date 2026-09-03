@@ -87,10 +87,18 @@ def fetch_revenue_api() -> dict:
 def load_payload(payload: dict, source: str = SOURCE_TAG) -> dict:
     """UPSERT toàn bộ games/monthly_data vào DB. Trả stats.
 
-    API trả nhiều entry cho cùng game_id (mỗi region một entry: GLOBAL/CN/JP).
+    API trả nhiều entry cho cùng game_id (mỗi region một entry: GLOBAL/CN/JP...).
     Schema có UNIQUE(game_id, snapshot_month) nên aggregate: tổng revenue
     các region trong tháng → 1 row scope='combined' (khớp semantics HTML cũ).
+
+    QUAN TRỌNG — unit & công thức hiển thị của trang (verify 2026-09-03):
+    - API trả CENTS (chia 100 ra USD)
+    - Entry CN chỉ là CN-iOS; trang cộng CN-Android = iOS × CN_ANDROID_MULTIPLIER
+      (default 1.75, thấy trong revenue-estimates.js + disclaimer trang)
+    - displayed = (Σ non-CN regions + CN × (1 + multiplier)) / 100
+      Verify: Genshin 08-2026 = (14.11 + 8.8×2.75 + 0.08) = $38.39M ✓ khớp trang
     """
+    CN_ANDROID_MULTIPLIER = 1.75
     games = payload["games"]
     games_added = facts_inserted = facts_updated = 0
 
@@ -107,6 +115,11 @@ def load_payload(payload: dict, source: str = SOURCE_TAG) -> dict:
             rev = md.get("total_revenue") or 0
             mm, yyyy = month_key.split("-")
             month_iso = f"{yyyy}-{mm}"
+            if (g.get("region") or "").upper() == "CN":
+                # CN API = iOS only; cộng CN-Android = iOS × multiplier
+                rev = rev * (1 + CN_ANDROID_MULTIPLIER)
+            # API trả cents → USD
+            rev = rev / 100.0
             entry["monthly"][month_iso] = entry["monthly"].get(month_iso, 0) + float(rev)
 
     # Rank: revenue giảm dần trong mỗi tháng
