@@ -6,6 +6,7 @@ from config.settings import (
     STEAM_ENABLED, ITUNES_ENABLED, IGDB_ENABLED,
     STEAM_API_KEY, TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET,
     API_KEY,
+    LARK_WEBHOOK_URL, LARK_WEBHOOK_SECRET,
     validate_credentials, ensure_dirs,
 )
 
@@ -16,5 +17,6 @@ __all__ = [
     "STEAM_ENABLED", "ITUNES_ENABLED", "IGDB_ENABLED",
     "STEAM_API_KEY", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
     "API_KEY",
+    "LARK_WEBHOOK_URL", "LARK_WEBHOOK_SECRET",
     "validate_credentials", "ensure_dirs",
 ]

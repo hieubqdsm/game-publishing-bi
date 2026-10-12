@@ -11,6 +11,7 @@ Pipeline: RSS (Verge/Polygon/IGN/...) + Reddit (r/games...) + Steam News API.
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -34,6 +35,9 @@ def main(hours: int, source: str | None):
     """Fetch game news từ RSS + AI + Reddit + Steam News API + Hacker News."""
     ensure_dirs()
     init_schema()
+
+    # Thời điểm bắt đầu — dùng để lọc tin MỚI (fetched_at >= start) gửi Lark
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     logger.info(f"=== NEWS CRAWL | hours={hours}, source={source or 'ALL'} ===")
 
@@ -80,6 +84,10 @@ def main(hours: int, source: str | None):
     logger.info("=== NEWS SUMMARY (last {}h) ===".format(hours))
     for r in rows:
         logger.info(f"  {r['source_type']:12s} {r['n']:>4d} items | latest: {r['latest']}")
+
+    # Gửi digest tin MỚI của lần chạy này qua Lark webhook (nếu có cấu hình)
+    from src.notify.digest import send_news_digest
+    send_news_digest(started_at)
 
     sys.exit(0)
 

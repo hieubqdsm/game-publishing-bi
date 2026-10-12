@@ -55,6 +55,10 @@ TWITCH_CLIENT_SECRET: Final[str] = os.getenv("TWITCH_CLIENT_SECRET", "")
 # Generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
 API_KEY: Final[str] = os.getenv("API_KEY", "")
 
+# ---- Lark notify (custom bot webhook — không tốn API quota) ----------------
+LARK_WEBHOOK_URL: Final[str] = os.getenv("LARK_WEBHOOK_URL", "")
+LARK_WEBHOOK_SECRET: Final[str] = os.getenv("LARK_WEBHOOK_SECRET", "")
+
 
 def validate_credentials() -> list[str]:
     """Return list of missing required credentials (empty = OK)."""
