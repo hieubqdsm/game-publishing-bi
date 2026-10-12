@@ -59,6 +59,19 @@ API_KEY: Final[str] = os.getenv("API_KEY", "")
 LARK_WEBHOOK_URL: Final[str] = os.getenv("LARK_WEBHOOK_URL", "")
 LARK_WEBHOOK_SECRET: Final[str] = os.getenv("LARK_WEBHOOK_SECRET", "")
 
+# ---- DNS fallback (DoH) — chống ISP DNS chặn/fail từng domain --------------
+# Domain trong list này sẽ resolve qua Cloudflare DoH (1.1.1.1) khi system
+# DNS fail. Bỏ trống để tắt. Nhiều domain cách nhau bằng dấu phẩy.
+# (VNPT hay chặn cả cụm Steam: api + store + community)
+DNS_FALLBACK_HOSTS: Final[list[str]] = [
+    h.strip()
+    for h in os.getenv(
+        "DNS_FALLBACK_HOSTS",
+        "api.steampowered.com,store.steampowered.com,steamcommunity.com",
+    ).split(",")
+    if h.strip()
+]
+
 
 def validate_credentials() -> list[str]:
     """Return list of missing required credentials (empty = OK)."""
