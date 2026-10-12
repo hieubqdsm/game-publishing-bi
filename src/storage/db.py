@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS fact_news (
     published_at TEXT NOT NULL,             -- ISO datetime từ source
     score        INTEGER,                   -- Reddit upvotes, Steam upvotes (nullable cho RSS)
     keywords     TEXT,                      -- comma-separated tags phát hiện được
+    category     TEXT,                      -- 'ai' | 'game' | 'tech' | 'steam_update' (classify_news)
     fetched_at   TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (source_id) REFERENCES dim_news_source(source_id),
     FOREIGN KEY (game_id) REFERENCES dim_game(game_id)
@@ -226,6 +227,19 @@ def init_schema(db_path: Path | None = None) -> None:
     """Tạo toàn bộ tables + indexes nếu chưa có (idempotent)."""
     with get_connection(db_path) as conn:
         conn.executescript(SCHEMA_SQL)
+        _migrate(conn)
+
+
+def _migrate(conn) -> None:
+    """Migrations cho DB đã tồn tại (CREATE TABLE IF NOT EXISTS không thêm cột mới)."""
+    migrations = [
+        # fact_news.category — thêm 2026-09: phân loại ai/game/tech/steam_update
+        ("fact_news", "category", "ALTER TABLE fact_news ADD COLUMN category TEXT"),
+    ]
+    for table, column, ddl in migrations:
+        cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+        if column not in cols:
+            conn.execute(ddl)
 
 
 def get_table_rowcounts(db_path: Path | None = None) -> dict[str, int]:

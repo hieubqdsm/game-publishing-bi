@@ -173,6 +173,7 @@ Cho phép lưu bất kỳ metric nào từ Reddit, YouTube, reviews sentiment...
 | `published_at` | TEXT | ISO datetime từ source |
 | `score` | INTEGER | Reddit upvotes / HN score (null cho RSS) |
 | `keywords` | TEXT | Tags auto-detected: `launch`, `update`, `layoffs`, `acquisition`, ... |
+| `category` | TEXT | Loại tin: `ai` / `game` / `tech` / `steam_update` — rule-based theo nguồn + từ khóa tiêu đề (`src/transforms/classify_news.py`). Backfill: `python scripts/classify_news.py [--force]` |
 | `fetched_at` | TEXT | Timestamp crawl |
 
 **Constraints:** `UNIQUE(url)` — idempotent, re-run không duplicate.

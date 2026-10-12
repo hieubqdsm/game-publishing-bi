@@ -215,6 +215,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "news.feed_lookback": {"vi": "Feed lookback", "en": "Feed lookback"},
     "news.empty": {"vi": "Chưa có news trong", "en": "No news in the last"},
     "news.run_hint": {"vi": "rồi refresh.", "en": "then refresh."},
+    "news.filter_type": {"vi": "Loại tin", "en": "Type"},
+    "news.cat.all": {"vi": "Tất cả", "en": "All"},
+    "news.cat.ai": {"vi": "🤖 Tin AI", "en": "🤖 AI news"},
+    "news.cat.game": {"vi": "🎮 Tin game", "en": "🎮 Game news"},
+    "news.cat.tech": {"vi": "📱 Công nghệ khác", "en": "📱 Other tech"},
+    "news.cat.steam_update": {"vi": "🛠️ Steam update", "en": "🛠️ Steam update"},
+    "news.filter_source": {"vi": "Nguồn", "en": "Source"},
+    "news.filter_keyword": {"vi": "Từ khóa", "en": "Keyword"},
+    "news.search": {"vi": "🔍 Tìm tiêu đề", "en": "🔍 Search title"},
 }
 
 
@@ -442,24 +451,34 @@ elif page == PAGES[1]:
 
     st.divider()
 
-    # Filters
-    col_f1, col_f2, col_f3 = st.columns(3)
+    # Filters (4 cột: loại tin / nguồn / từ khóa / search)
+    CAT_KEYS = ["all", "ai", "game", "tech", "steam_update"]
+    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
     with col_f1:
-        sources = ["All"] + sorted(news["source_name"].unique())
-        sel_source = st.selectbox("Filter by source", sources)
+        sel_category = st.selectbox(
+            t("news.filter_type"), CAT_KEYS, index=0,
+            format_func=lambda c: t("news.cat.all") if c == "all" else t(f"news.cat.{c}"),
+        )
     with col_f2:
+        sources = ["All"] + sorted(news["source_name"].unique())
+        sel_source = st.selectbox(t("news.filter_source"), sources)
+    with col_f3:
         # Parse keywords thành list unique
         all_keywords = set()
         for kws in news["keywords"].dropna():
             if kws:
                 all_keywords.update(kws.split(","))
         kw_options = ["All"] + sorted(all_keywords)
-        sel_keyword = st.selectbox("Filter by keyword", kw_options)
-    with col_f3:
-        search = st.text_input("🔍 Search title", "")
+        sel_keyword = st.selectbox(t("news.filter_keyword"), kw_options)
+    with col_f4:
+        search = st.text_input(t("news.search"), "")
 
     # Apply filters
     filtered = news.copy()
+    if "category" in filtered.columns:
+        filtered["category"] = filtered["category"].fillna("")
+    if sel_category != "all":
+        filtered = filtered[filtered["category"] == sel_category]
     if sel_source != "All":
         filtered = filtered[filtered["source_name"] == sel_source]
     if sel_keyword != "All":
@@ -532,6 +551,10 @@ elif page == PAGES[1]:
 
     # Áp dụng filter tương tự lên feed
     feed_filtered = feed_news.copy()
+    if "category" in feed_filtered.columns:
+        feed_filtered["category"] = feed_filtered["category"].fillna("")
+    if sel_category != "all":
+        feed_filtered = feed_filtered[feed_filtered["category"] == sel_category]
     if sel_source != "All":
         feed_filtered = feed_filtered[feed_filtered["source_name"] == sel_source]
     if sel_keyword != "All":
@@ -546,14 +569,14 @@ elif page == PAGES[1]:
     st.subheader(f"📋 News feed ({total_items} items)")
 
     # Reset pagination khi đổi feed_lookback hoặc filter
-    feed_state_key = f"{feed_lookback}|{sel_source}|{sel_keyword}|{search}"
+    feed_state_key = f"{feed_lookback}|{sel_category}|{sel_source}|{sel_keyword}|{search}"
     if st.session_state.get("news_feed_state") != feed_state_key:
         st.session_state["news_feed_state"] = feed_state_key
         st.session_state["news_page"] = 1
 
     # Sort by date (newest first) then by score
     display_cols = ["published_at", "source_name", "title", "summary", "author",
-                    "keywords", "score", "url"]
+                    "keywords", "score", "url", "category"]
     display_df = feed_filtered[display_cols].copy() if not feed_filtered.empty else feed_filtered
     display_df["published_at"] = pd.to_datetime(display_df["published_at"]).dt.strftime("%m-%d %H:%M")
 
@@ -605,16 +628,18 @@ elif page == PAGES[1]:
         time_str = row["published_at"]
         kw = row["keywords"]
         score = row["score"]
+        cat = row.get("category", "") or ""
         summary = row.get("summary", "") or ""
         author = row.get("author", "") or ""
 
         kw_str = f" *`{kw}`*" if kw else ""
         score_str = f" ⬆{score}" if pd.notna(score) and score else ""
         author_str = f" · ✍ {author}" if author else ""
+        cat_str = f" · {t(f'news.cat.{cat}')}" if cat and cat != "all" else ""
         summary_str = f"\n\n> {summary[:200]}{'...' if len(summary) > 200 else ''}" if summary else ""
 
         st.markdown(
-            f"**[{time_str}]** `[{src}]` [{title}]({url}){kw_str}{score_str}{author_str}{summary_str}",
+            f"**[{time_str}]** `[{src}]` [{title}]({url}){cat_str}{kw_str}{score_str}{author_str}{summary_str}",
         )
         st.markdown("")
 

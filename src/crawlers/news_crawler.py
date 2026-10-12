@@ -32,6 +32,7 @@ from loguru import logger
 from config import PROJECT_ROOT, RAW_DIR, STEAM_API_KEY
 from src.crawlers.base import BaseCrawler
 from src.storage.db import get_connection
+from src.transforms.classify_news import classify_article
 
 
 # ---- RSS feeds: các gaming news outlets tin cậy ---------------------------
@@ -257,19 +258,31 @@ class NewsCrawler(BaseCrawler):
         if not game_id:
             game_id = self._match_game(f"{title} {summary or ''}")
 
+        # Phân loại ai/game/tech/steam_update — cần source_type + source_name
+        with get_connection() as conn:
+            src_row = conn.execute(
+                "SELECT source_type, source_name FROM dim_news_source WHERE source_id = ?",
+                (source_id,),
+            ).fetchone()
+        category = (
+            classify_article(src_row["source_type"], src_row["source_name"], title, summary)
+            if src_row else None
+        )
+
         with get_connection() as conn:
             cur = conn.execute(
                 """
                 INSERT INTO fact_news
                     (source_id, game_id, title, url, summary, author,
-                     published_at, score, keywords)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     published_at, score, keywords, category)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(url) DO UPDATE SET
                     score=excluded.score,
-                    keywords=excluded.keywords
+                    keywords=excluded.keywords,
+                    category=excluded.category
                 """,
                 (source_id, game_id, title, url, summary, author,
-                 published_at, score, keywords),
+                 published_at, score, keywords, category),
             )
             # cur.rowcount > 0 nghĩa là có change (insert hoặc update)
             # Để phân biệt: check via last_insert_rowid vs existing

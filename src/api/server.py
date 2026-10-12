@@ -10,7 +10,7 @@ Endpoints:
   GET /api/tables                       — list available tables
   GET /api/tables/{name}?format=csv     — raw table (json | csv)
   GET /api/gacha/revenue?month=&game=   — pre-joined flat (game+month+rank+rev+scope)
-  GET /api/news?hours=24&source=        — news joined with source
+  GET /api/news?hours=24&source=&category=   — news joined with source (filter theo loại tin)
   GET /api/stats/summary                — KPIs overview
 
 Run: python scripts/serve_api.py
@@ -85,6 +85,8 @@ def _respond(df: pd.DataFrame, fmt: str) -> Any:
     if fmt.lower() == "csv":
         return _df_to_csv_stream(df)
     # JSON: list of records (Power BI "Web" connector parse được)
+    # NaN/NaT không hợp lệ trong JSON — chuyển thành null
+    df = df.astype(object).where(df.notna(), None)
     return JSONResponse(content=df.to_dict(orient="records"))
 
 
@@ -307,13 +309,14 @@ def gacha_latest_month(
 def news(
     hours: int = Query(24, ge=1, le=24 * 90, description="Lookback hours"),
     source_type: str | None = Query(None, description="rss|ai_rss|hackernews|reddit|steam_news"),
+    category: str | None = Query(None, description="ai|game|tech|steam_update"),
     format: str = Query("json", pattern="^(json|csv)$"),
     api_key: str = Depends(verify_api_key),
 ) -> Any:
     """News items joined với source — cho news dashboard."""
     sql = """
         SELECT n.news_id, n.title, n.url, n.summary, n.author,
-               n.published_at, n.score, n.keywords, n.fetched_at,
+               n.published_at, n.score, n.keywords, n.category, n.fetched_at,
                s.source_type, s.source_name
         FROM fact_news n
         JOIN dim_news_source s ON n.source_id = s.source_id
@@ -323,6 +326,9 @@ def news(
     if source_type:
         sql += " AND s.source_type = ?"
         params.append(source_type)
+    if category:
+        sql += " AND n.category = ?"
+        params.append(category)
     sql += " ORDER BY n.published_at DESC"
     with get_connection() as conn:
         df = pd.read_sql_query(sql, conn, params=params)
