@@ -7,6 +7,7 @@ from config.settings import (
     STEAM_API_KEY, TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET,
     API_KEY,
     LARK_WEBHOOK_URL, LARK_WEBHOOK_SECRET,
+    DNS_FALLBACK_HOSTS,
     validate_credentials, ensure_dirs,
 )
 
@@ -18,5 +19,6 @@ __all__ = [
     "STEAM_API_KEY", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
     "API_KEY",
     "LARK_WEBHOOK_URL", "LARK_WEBHOOK_SECRET",
+    "DNS_FALLBACK_HOSTS",
     "validate_credentials", "ensure_dirs",
 ]

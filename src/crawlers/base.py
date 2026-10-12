@@ -30,6 +30,11 @@ from tenacity import (
 
 from config import PROJECT_ROOT, RAW_DIR, LOG_LEVEL
 from src.storage.db import get_connection
+from src.utils.dns_fallback import install_dns_fallback
+
+# ISP DNS thỉnh thoảng chặn/fail từng domain (vd api.steampowered.com bên VNPT)
+# → wrap getaddrinfo fallback qua DoH 1.1.1.1 cho domain trong DNS_FALLBACK_HOSTS
+install_dns_fallback()
 
 
 # ---- Logger setup (chỉ configure 1 lần) -----------------------------------

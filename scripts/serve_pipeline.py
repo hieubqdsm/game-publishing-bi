@@ -46,14 +46,14 @@ VENV_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
 PYTHON_BIN = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
 
 
-def _run(cmd_desc: str, cmd: list[str]) -> None:
-    """Run 1 command, log result."""
+def _run(cmd_desc: str, cmd: list[str], timeout: int = 600) -> bool:
+    """Run 1 command, log result. Trả True nếu exit 0."""
     import subprocess
     now = datetime.now().strftime("%H:%M:%S")
     logger.info(f"[{now}] ▶ {cmd_desc}")
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600,
+            cmd, capture_output=True, text=True, timeout=timeout,
             cwd=str(Path(__file__).resolve().parent.parent),
         )
         # tail output để log ngắn
@@ -65,10 +65,13 @@ def _run(cmd_desc: str, cmd: list[str]) -> None:
             for line in err:
                 logger.warning(f"  ⚠ {line}")
         logger.success(f"✓ {cmd_desc} done (exit {result.returncode})")
+        return result.returncode == 0
     except subprocess.TimeoutExpired:
-        logger.error(f"✗ {cmd_desc} TIMEOUT (>10min)")
+        logger.error(f"✗ {cmd_desc} TIMEOUT (>{timeout // 60}min)")
+        return False
     except Exception as e:
         logger.error(f"✗ {cmd_desc} failed: {e}")
+        return False
 
 
 def _should_run_steam(now: datetime) -> bool:
@@ -135,11 +138,23 @@ def main(once: bool, dry_run: bool):
         if _should_run_news(now) and last_run.get("news") != slot:
             last_run["news"] = slot
             if not dry_run:
-                _run("News crawl", [
+                # Thời điểm bắt đầu (UTC, format DB) — để lọc tin MỚI cho digest Lark
+                from datetime import datetime as _dt, timezone as _tz
+                news_started_at = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M:%S")
+                ok = _run("News crawl", [
                     PYTHON_BIN,
                     "scripts/run_news.py",
                     "--hours", "6",  # crawl 6h gần nhất (chống miss tin giữa 2 lần chạy)
-                ])
+                ], timeout=900)  # news gồm Steam News per-game, mạng chậm cần dư thời gian
+                if not ok:
+                    # Crawl bị kill/timeout → run_news chưa kịp gửi digest.
+                    # Scheduler tự gửi digest một phần (nếu có tin mới) để không bỏ lỡ.
+                    try:
+                        from src.notify.digest import send_news_digest
+                        logger.info("News crawl không xong — gửi digest một phần qua Lark")
+                        send_news_digest(news_started_at)
+                    except Exception as e:
+                        logger.warning(f"Gửi digest bù lỗi: {e}")
 
         if once:
             logger.info("--once mode → exiting")

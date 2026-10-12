@@ -93,7 +93,9 @@ python scripts/run_news.py --source ai            # Chỉ AI News (TechCrunch/Ve
 ```
 Nguồn: RSS gaming (5 outlets) + **AI News (5 outlets)** + Hacker News + Steam News. Reddit skip (cần OAuth từ 2023).
 
-**Lark notify:** sau mỗi lần crawl xong, `run_news.py` tự gửi digest card (số tin mới theo loại + top 8 headline) vào group Lark qua Custom Bot webhook — không tốn API quota. Config trong `.env` (`LARK_WEBHOOK_URL`, `LARK_WEBHOOK_SECRET`). Code: `src/notify/lark.py` (transport) + `src/notify/digest.py` (nội dung). Không có tin mới → không gửi. Test tay: `python -c "from src.notify.digest import send_news_digest; from datetime import datetime, timedelta, timezone; send_news_digest((datetime.now(timezone.utc)-timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S'))"`
+**Lark notify:** sau mỗi lần crawl xong, `run_news.py` tự gửi digest card (số tin mới theo loại + top 8 headline) vào group Lark qua Custom Bot webhook — không tốn API quota. Config trong `.env` (`LARK_WEBHOOK_URL`, `LARK_WEBHOOK_SECRET`). Code: `src/notify/lark.py` (transport) + `src/notify/digest.py` (nội dung). Không có tin mới → không gửi. Scheduler còn gửi digest bù khi crawl bị timeout/kill. Test tay: `python -c "from src.notify.digest import send_news_digest; from datetime import datetime, timedelta, timezone; send_news_digest((datetime.now(timezone.utc)-timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S'))"`
+
+**DNS fallback (DoH):** ISP (VNPT) thỉnh thoảng NXDOMAIN cả cụm Steam (`api.`/`store.`/`steamcommunity.com`). `src/utils/dns_fallback.py` (cài trong `BaseCrawler`) tự resolve qua **Google DoH `8.8.8.8`** khi system DNS fail — dùng Google chứ KHÔNG dùng Cloudflare 1.1.1.1 vì Google honor EDNS Client Subnet → trả CDN edge đúng vùng VN (đã verify: edge Cloudflare trả = timeout, edge Google = 200 trong 0.2s). Domain list cấu hình qua `DNS_FALLBACK_HOSTS` trong `.env`.
 
 ### Gacha revenue (top 50 hàng tháng — HTML parser)
 ```bash
